@@ -1,9 +1,12 @@
-module Main exposing (JsonValue(..), Model(..), Msg(..), decoder, indent, init, loadData, main, update, view, viewJson, viewJsonKeyValuePair)
+module Main exposing (JsonValue(..), Model, Msg(..), decoder, indent, init, loadData, main, update, view, viewJsonKeyValuePair, viewJsonValue)
 
 import Browser
 import Dict exposing (Dict)
 import Html exposing (..)
-import Html.Attributes exposing (style)
+import Html.Attributes exposing (..)
+import Html.Events exposing (onInput)
+import Html.Keyed as Keyed
+import Html.Lazy
 import Http
 import Json.Decode as Decode
     exposing
@@ -41,13 +44,19 @@ main =
 -- MODEL
 
 
+type alias Model =
+    { filter : String
+    , apiData : ApiData
+    }
+
+
 type alias KbcIndex =
     { host : String
     , api : String
     , version : String
     , revision : String
     , documentation : String
-    , components : JsonValue
+    , components : List JsonValue
     , services : JsonValue
     , urlTemplates : JsonValue
     }
@@ -63,7 +72,7 @@ type JsonValue
     | JsonNull
 
 
-type Model
+type ApiData
     = Loading
     | Success KbcIndex
     | Failure String
@@ -71,7 +80,7 @@ type Model
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Loading
+    ( Model "" Loading
     , loadData
     )
 
@@ -82,6 +91,7 @@ init _ =
 
 type Msg
     = NoOp
+    | ChangeFilter String
     | GotData (Result Http.Error KbcIndex)
 
 
@@ -91,10 +101,13 @@ update msg model =
         GotData result ->
             case result of
                 Ok kbcIndex ->
-                    ( Success kbcIndex, Cmd.none )
+                    ( { model | apiData = Success kbcIndex }, Cmd.none )
 
                 Err _ ->
-                    ( Failure "there was a problem", Cmd.none )
+                    ( { model | apiData = Failure "there was a problem" }, Cmd.none )
+
+        ChangeFilter filter ->
+            ( { model | filter = filter }, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
@@ -106,52 +119,118 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    case model of
-        Loading ->
-            div [] [ text "Loading" ]
+    div []
+        [ viewFilter model
+        , case model.apiData of
+            Loading ->
+                div [] [ text "Loading" ]
 
-        Success kbcIndex ->
-            viewJson 1 kbcIndex.components
+            Success kbcIndex ->
+                viewComponents model.filter (filterComponents model.filter kbcIndex.components)
 
-        Failure _ ->
-            div [] [ text "there was an error" ]
+            Failure _ ->
+                div [] [ text "there was an error" ]
+        ]
+
+
+viewFilter : Model -> Html Msg
+viewFilter model =
+    input [ placeholder "filter values", value model.filter, onInput ChangeFilter ] []
 
 
 indent : Int -> Attribute msg
 indent depth =
-    style "padding-left" (String.fromInt depth ++ "em")
+    style "padding-left" ((++) (String.fromFloat (0.5 * toFloat depth)) "em")
 
 
-viewJson : Int -> JsonValue -> Html Msg
-viewJson depth json =
+viewComponents : String -> List JsonValue -> Html Msg
+viewComponents filter components =
+    div []
+        [ text ("count:" ++ String.fromInt (List.length components))
+        , div
+            []
+            (List.map (viewJsonValueCached filter 1) components)
+        ]
+
+
+viewJsonValueCached : String -> Int -> JsonValue -> Html Msg
+viewJsonValueCached filter depth json =
+    Html.Lazy.lazy3 viewJsonValue filter depth json
+
+
+viewJsonValue : String -> Int -> JsonValue -> Html Msg
+viewJsonValue filter depth json =
     case json of
         JsonString value ->
-            span [] [ text ("\"" ++ value ++ "\",\n") ]
+            viewStringValue filter ("\"" ++ value ++ "\"")
 
         JsonInt value ->
-            span [] [ text (String.fromInt value ++ ",") ]
+            viewStringValue filter (String.fromInt value)
 
         JsonFloat value ->
-            span [] [ text (String.fromFloat value ++ ",") ]
+            viewStringValue filter (String.fromFloat value)
 
         JsonBoolean value ->
-            span [] [ text "boolean" ]
-
-        JsonArray value ->
-            span [] [ text "[", div [ indent depth ] (List.map (viewJson (depth + 1)) value), text "]" ]
-
-        JsonObject value ->
-            span [] (List.concat [ [ text "{" ], List.map (viewJsonKeyValuePair (depth + 1)) (Dict.toList value), [ text "}" ] ])
+            viewStringValue filter (boolToString value)
 
         JsonNull ->
-            span [] [ text "null" ]
+            viewStringValue filter "null"
+
+        JsonArray value ->
+            span []
+                [ text "["
+                , div [ indent depth ] (List.map (viewJsonValue filter (depth + 1)) value)
+                , text "],"
+                ]
+
+        JsonObject value ->
+            span []
+                [ text "{"
+                , span []
+                    (value
+                        |> Dict.toList
+                        |> List.map (viewJsonKeyValuePair filter (depth + 1))
+                    )
+                , text "},"
+                ]
 
 
-viewJsonKeyValuePair : Int -> ( String, JsonValue ) -> Html Msg
-viewJsonKeyValuePair depth ( jsKey, jsValue ) =
-    div [ indent depth ]
+viewStringValue : String -> String -> Html Msg
+viewStringValue filter value =
+    {--}
+    if shouldNotFilter filter then
+        span [] [ text (value ++ ",") ]
+
+    else
+        let
+            values =
+                String.split filter value
+        in
+        span []
+            ((values
+                |> List.map text
+                |> List.intersperse (span [ style "background-color" "yellow" ] [ text filter ])
+                |> List.append
+             )
+             <|
+                [ text "," ]
+            )
+--}
+
+
+viewJsonKeyValuePair : String -> Int -> ( String, JsonValue ) -> Html Msg
+viewJsonKeyValuePair filter depth ( jsKey, jsValue ) =
+    let
+        component =
+            if jsKey == "id" then
+                strong
+
+            else
+                div
+    in
+    component [ indent depth ]
         [ text ("\"" ++ jsKey ++ "\": ")
-        , viewJson depth jsValue
+        , viewJsonValue filter depth jsValue
         ]
 
 
@@ -192,6 +271,58 @@ kbcIndexDecoder =
         (field "version" string)
         (field "revision" string)
         (field "documentation" string)
-        (field "components" decoder)
+        (field "components" (list decoder))
         (field "services" decoder)
         (field "urlTemplates" decoder)
+
+
+
+-- HELPERS
+
+
+boolToString : Bool -> String
+boolToString value =
+    if value == True then
+        "true"
+
+    else
+        "false"
+
+
+filterJsonValue : String -> JsonValue -> Bool
+filterJsonValue filter jsonValue =
+    case jsonValue of
+        JsonString value ->
+            String.contains filter value
+
+        JsonInt value ->
+            String.contains filter (String.fromInt value)
+
+        JsonFloat value ->
+            String.contains filter (String.fromFloat value)
+
+        JsonBoolean value ->
+            String.contains filter (boolToString value)
+
+        JsonArray value ->
+            List.any (filterJsonValue filter) value
+
+        JsonObject value ->
+            List.any (\( k, v ) -> filterJsonValue filter v) (Dict.toList value)
+
+        JsonNull ->
+            String.contains filter "null"
+
+
+shouldNotFilter : String -> Bool
+shouldNotFilter filter =
+    String.length filter < 3
+
+
+filterComponents : String -> List JsonValue -> List JsonValue
+filterComponents filter components =
+    if shouldNotFilter filter then
+        components
+
+    else
+        List.filter (filterJsonValue filter) components
