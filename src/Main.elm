@@ -1,19 +1,22 @@
-module Main exposing (main)
+module Main exposing (JsonValue(..), Model(..), Msg(..), decoder, indent, init, loadData, main, update, view, viewJson, viewJsonKeyValuePair)
 
 import Browser
 import Dict exposing (Dict)
 import Html exposing (..)
+import Html.Attributes exposing (style)
 import Http
 import Json.Decode as Decode
     exposing
         ( Decoder
         , bool
         , dict
+        , field
         , float
         , int
         , lazy
         , list
         , map
+        , map8
         , null
         , oneOf
         , string
@@ -38,6 +41,18 @@ main =
 -- MODEL
 
 
+type alias KbcIndex =
+    { host : String
+    , api : String
+    , version : String
+    , revision : String
+    , documentation : String
+    , components : JsonValue
+    , services : JsonValue
+    , urlTemplates : JsonValue
+    }
+
+
 type JsonValue
     = JsonString String
     | JsonInt Int
@@ -50,7 +65,7 @@ type JsonValue
 
 type Model
     = Loading
-    | Success JsonValue
+    | Success KbcIndex
     | Failure String
 
 
@@ -67,7 +82,7 @@ init _ =
 
 type Msg
     = NoOp
-    | GotData (Result Http.Error JsonValue)
+    | GotData (Result Http.Error KbcIndex)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -75,8 +90,8 @@ update msg model =
     case msg of
         GotData result ->
             case result of
-                Ok fullText ->
-                    ( Success fullText, Cmd.none )
+                Ok kbcIndex ->
+                    ( Success kbcIndex, Cmd.none )
 
                 Err _ ->
                     ( Failure "there was a problem", Cmd.none )
@@ -95,36 +110,49 @@ view model =
         Loading ->
             div [] [ text "Loading" ]
 
-        Success json ->
-            viewJson json
+        Success kbcIndex ->
+            viewJson 1 kbcIndex.components
 
         Failure _ ->
             div [] [ text "there was an error" ]
 
 
-viewJson : JsonValue -> Html Msg
-viewJson json =
+indent : Int -> Attribute msg
+indent depth =
+    style "padding-left" (String.fromInt depth ++ "em")
+
+
+viewJson : Int -> JsonValue -> Html Msg
+viewJson depth json =
     case json of
         JsonString value ->
-            div [] [ text ("\"" ++ value ++ "\",\n") ]
+            span [] [ text ("\"" ++ value ++ "\",\n") ]
 
         JsonInt value ->
-            div [] [ text (String.fromInt value ++ ",") ]
+            span [] [ text (String.fromInt value ++ ",") ]
 
         JsonFloat value ->
-            div [] [ text (String.fromFloat value ++ ",") ]
+            span [] [ text (String.fromFloat value ++ ",") ]
 
         JsonBoolean value ->
-            div [] [ text "boolean" ]
+            span [] [ text "boolean" ]
 
         JsonArray value ->
-            div [] [ text "[", div [] (List.map viewJson value), text "]" ]
+            span [] [ text "[", div [ indent depth ] (List.map (viewJson (depth + 1)) value), text "]" ]
 
         JsonObject value ->
-            div [] (List.map (\( k, v ) -> div [] [ text ("\"" ++ k ++ "\""), viewJson v ]) (Dict.toList value))
+            span [] (List.concat [ [ text "{" ], List.map (viewJsonKeyValuePair (depth + 1)) (Dict.toList value), [ text "}" ] ])
 
         JsonNull ->
-            div [] [ text "null" ]
+            span [] [ text "null" ]
+
+
+viewJsonKeyValuePair : Int -> ( String, JsonValue ) -> Html Msg
+viewJsonKeyValuePair depth ( jsKey, jsValue ) =
+    div [ indent depth ]
+        [ text ("\"" ++ jsKey ++ "\": ")
+        , viewJson depth jsValue
+        ]
 
 
 
@@ -135,8 +163,12 @@ loadData : Cmd Msg
 loadData =
     Http.get
         { url = "https://connection.keboola.com/v2/storage"
-        , expect = Http.expectJson GotData decoder
+        , expect = Http.expectJson GotData kbcIndexDecoder
         }
+
+
+
+-- https://stackoverflow.com/questions/40825493/elm-decoding-unknown-json-structure
 
 
 decoder : Decoder JsonValue
@@ -150,3 +182,16 @@ decoder =
         , dict (lazy (\_ -> decoder)) |> map JsonObject
         , null JsonNull
         ]
+
+
+kbcIndexDecoder : Decoder KbcIndex
+kbcIndexDecoder =
+    map8 KbcIndex
+        (field "host" string)
+        (field "api" string)
+        (field "version" string)
+        (field "revision" string)
+        (field "documentation" string)
+        (field "components" decoder)
+        (field "services" decoder)
+        (field "urlTemplates" decoder)
