@@ -4,7 +4,7 @@ import Browser
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onInput)
+import Html.Events exposing (onClick, onInput)
 import Html.Keyed as Keyed
 import Html.Lazy
 import Http
@@ -19,6 +19,7 @@ import Json.Decode as Decode
         , lazy
         , list
         , map
+        , map2
         , map8
         , null
         , oneOf
@@ -50,13 +51,19 @@ type alias Model =
     }
 
 
+type alias Component =
+    { id : String
+    , json : JsonValue
+    }
+
+
 type alias KbcIndex =
     { host : String
     , api : String
     , version : String
     , revision : String
     , documentation : String
-    , components : List JsonValue
+    , components : List Component
     , services : JsonValue
     , urlTemplates : JsonValue
     }
@@ -92,6 +99,7 @@ init _ =
 type Msg
     = NoOp
     | ChangeFilter String
+    | Refresh
     | GotData (Result Http.Error KbcIndex)
 
 
@@ -109,6 +117,9 @@ update msg model =
         ChangeFilter filter ->
             ( { model | filter = filter }, Cmd.none )
 
+        Refresh ->
+            ( { model | apiData = Loading }, loadData )
+
         NoOp ->
             ( model, Cmd.none )
 
@@ -121,16 +132,22 @@ view : Model -> Html Msg
 view model =
     div []
         [ viewFilter model
+        , viewRefreshButton
         , case model.apiData of
             Loading ->
                 div [] [ text "Loading" ]
 
             Success kbcIndex ->
-                viewComponents model.filter (filterComponents model.filter kbcIndex.components)
+                viewComponents (filterComponents model.filter kbcIndex.components)
 
             Failure _ ->
                 div [] [ text "there was an error" ]
         ]
+
+
+viewRefreshButton : Html Msg
+viewRefreshButton =
+    button [ onClick Refresh ] [ text "Reload" ]
 
 
 viewFilter : Model -> Html Msg
@@ -143,43 +160,41 @@ indent depth =
     style "padding-left" ((++) (String.fromFloat (0.5 * toFloat depth)) "em")
 
 
-viewComponents : String -> List JsonValue -> Html Msg
-viewComponents filter components =
+viewComponents : List Component -> Html Msg
+viewComponents components =
     div []
         [ text ("count:" ++ String.fromInt (List.length components))
-        , div
-            []
-            (List.map (viewJsonValueCached filter 1) components)
+        , Keyed.node "div" [] (List.map viewComponentKeyed components)
         ]
 
 
-viewJsonValueCached : String -> Int -> JsonValue -> Html Msg
-viewJsonValueCached filter depth json =
-    Html.Lazy.lazy3 viewJsonValue filter depth json
+viewComponentKeyed : Component -> ( String, Html Msg )
+viewComponentKeyed component =
+    ( component.id, Html.Lazy.lazy2 viewJsonValue 1 component.json )
 
 
-viewJsonValue : String -> Int -> JsonValue -> Html Msg
-viewJsonValue filter depth json =
+viewJsonValue : Int -> JsonValue -> Html Msg
+viewJsonValue depth json =
     case json of
         JsonString value ->
-            viewStringValue filter ("\"" ++ value ++ "\"")
+            viewStringValue ("\"" ++ value ++ "\"")
 
         JsonInt value ->
-            viewStringValue filter (String.fromInt value)
+            viewStringValue (String.fromInt value)
 
         JsonFloat value ->
-            viewStringValue filter (String.fromFloat value)
+            viewStringValue (String.fromFloat value)
 
         JsonBoolean value ->
-            viewStringValue filter (boolToString value)
+            viewStringValue (boolToString value)
 
         JsonNull ->
-            viewStringValue filter "null"
+            viewStringValue "null"
 
         JsonArray value ->
             span []
                 [ text "["
-                , div [ indent depth ] (List.map (viewJsonValue filter (depth + 1)) value)
+                , div [ indent depth ] (List.map (viewJsonValue (depth + 1)) value)
                 , text "],"
                 ]
 
@@ -189,15 +204,19 @@ viewJsonValue filter depth json =
                 , span []
                     (value
                         |> Dict.toList
-                        |> List.map (viewJsonKeyValuePair filter (depth + 1))
+                        |> List.map (viewJsonKeyValuePair (depth + 1))
                     )
                 , text "},"
                 ]
 
 
-viewStringValue : String -> String -> Html Msg
-viewStringValue filter value =
-    {--}
+viewStringValue : String -> Html Msg
+viewStringValue value =
+    span [] [ text (value ++ ",") ]
+
+
+
+{--
     if shouldNotFilter filter then
         span [] [ text (value ++ ",") ]
 
@@ -218,8 +237,8 @@ viewStringValue filter value =
 --}
 
 
-viewJsonKeyValuePair : String -> Int -> ( String, JsonValue ) -> Html Msg
-viewJsonKeyValuePair filter depth ( jsKey, jsValue ) =
+viewJsonKeyValuePair : Int -> ( String, JsonValue ) -> Html Msg
+viewJsonKeyValuePair depth ( jsKey, jsValue ) =
     let
         component =
             if jsKey == "id" then
@@ -230,7 +249,7 @@ viewJsonKeyValuePair filter depth ( jsKey, jsValue ) =
     in
     component [ indent depth ]
         [ text ("\"" ++ jsKey ++ "\": ")
-        , viewJsonValue filter depth jsValue
+        , viewJsonValue depth jsValue
         ]
 
 
@@ -263,6 +282,13 @@ decoder =
         ]
 
 
+componentDecoder : Decoder Component
+componentDecoder =
+    map2 Component
+        (field "id" string)
+        decoder
+
+
 kbcIndexDecoder : Decoder KbcIndex
 kbcIndexDecoder =
     map8 KbcIndex
@@ -271,7 +297,7 @@ kbcIndexDecoder =
         (field "version" string)
         (field "revision" string)
         (field "documentation" string)
-        (field "components" (list decoder))
+        (field "components" (list componentDecoder))
         (field "services" decoder)
         (field "urlTemplates" decoder)
 
@@ -316,13 +342,13 @@ filterJsonValue filter jsonValue =
 
 shouldNotFilter : String -> Bool
 shouldNotFilter filter =
-    String.length filter < 3
+    String.isEmpty filter
 
 
-filterComponents : String -> List JsonValue -> List JsonValue
+filterComponents : String -> List Component -> List Component
 filterComponents filter components =
     if shouldNotFilter filter then
         components
 
     else
-        List.filter (filterJsonValue filter) components
+        List.filter (\component -> String.contains filter component.id) components
