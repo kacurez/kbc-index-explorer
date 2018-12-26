@@ -325,19 +325,19 @@ viewJsonValue : Int -> JsonValue -> Html Msg
 viewJsonValue depth json =
     case json of
         JsonString value ->
-            viewStringValue ("\"" ++ value ++ "\"")
+            viewStringValue "green" ("\"" ++ value ++ "\"")
 
         JsonInt value ->
-            viewStringValue (String.fromInt value)
+            viewStringValue "blue" (String.fromInt value)
 
         JsonFloat value ->
-            viewStringValue (String.fromFloat value)
+            viewStringValue "blue" (String.fromFloat value)
 
         JsonBoolean value ->
-            viewStringValue (boolToString value)
+            viewStringValue "blue" (boolToString value)
 
         JsonNull ->
-            viewStringValue "null"
+            viewStringValue "blue" "null"
 
         JsonArray value ->
             span []
@@ -358,9 +358,9 @@ viewJsonValue depth json =
                 ]
 
 
-viewStringValue : String -> Html Msg
-viewStringValue value =
-    span [] [ text (value ++ ",") ]
+viewStringValue : String -> String -> Html Msg
+viewStringValue color value =
+    span [ style "color" color ] [ text (value ++ ",") ]
 
 
 
@@ -396,7 +396,7 @@ viewJsonKeyValuePair depth ( jsKey, jsValue ) =
                 div
     in
     component [ indent depth ]
-        [ span [ style "color" "green" ] [ text ("\"" ++ jsKey ++ "\": ") ]
+        [ span [] [ text ("\"" ++ jsKey ++ "\": ") ]
         , viewJsonValue depth jsValue
         ]
 
