@@ -58,7 +58,7 @@ main =
 type alias Model =
     { region : Region
     , filter : String
-    , showDataDefinition : Bool
+    , showSimple : Bool
     , data : Dict Region ApiData
     }
 
@@ -129,7 +129,7 @@ type Msg
     | ChangeFilter String
     | Refresh
     | ChangeRegion Region
-    | ToggleDataDefinitionView
+    | ChangeView Bool
     | GotData Region (Result Http.Error KbcIndex)
 
 
@@ -161,8 +161,8 @@ update msg model =
             , Cmd.batch [ loadData "US", loadData "EU" ]
             )
 
-        ToggleDataDefinitionView ->
-            ( { model | showDataDefinition = not model.showDataDefinition }, Cmd.none )
+        ChangeView newValue ->
+            ( { model | showSimple = not model.showSimple }, Cmd.none )
 
         ChangeRegion newRegion ->
             ( { model | region = newRegion }, loadRegion newRegion model )
@@ -201,7 +201,8 @@ viewForm : Model -> Html Msg
 viewForm model =
     Form.form []
         [ Form.row []
-            [ Form.col [ Col.sm4 ]
+            [ Form.colLabel [ Col.sm2 ] [ text "Component id" ]
+            , Form.col [ Col.sm6 ]
                 [ Input.text
                     [ Input.attrs
                         [ placeholder "filter by component id"
@@ -223,13 +224,25 @@ viewForm model =
                 ]
             ]
         , Form.row []
-            [ Form.col [ Col.sm4 ]
-                [ Checkbox.checkbox
-                    [ Checkbox.id "checkout"
-                    , Checkbox.attrs [ type_ "checkbox", onClick ToggleDataDefinitionView, checked model.showDataDefinition ]
+            [ Form.col [ Col.sm8 ]
+                (Radio.radioList
+                    "viewradios"
+                    [ Radio.create
+                        [ Radio.id "simple"
+                        , Radio.inline
+                        , Radio.checked model.showSimple
+                        , Radio.onClick (ChangeView True)
+                        ]
+                        "Show data definitions only"
+                    , Radio.create
+                        [ Radio.id "whole"
+                        , Radio.inline
+                        , Radio.checked (not model.showSimple)
+                        , Radio.onClick (ChangeView False)
+                        ]
+                        "Show whole json"
                     ]
-                    "Show Data Definition only"
-                ]
+                )
             ]
         , Form.row []
             [ Form.col [ Col.sm10 ]
@@ -280,8 +293,8 @@ viewComponents : Model -> List Component -> Html Msg
 viewComponents model components =
     div []
         [ viewCount (List.length components)
-        , if model.showDataDefinition then
-            viewComponentsDataDefinition components
+        , if model.showSimple then
+            viewComponentsSimplified components
 
           else
             Keyed.node "div" [] (List.map viewComponentKeyed components)
@@ -294,8 +307,8 @@ viewCount count =
         [ text (String.fromInt count) ]
 
 
-viewComponentsDataDefinition : List Component -> Html Msg
-viewComponentsDataDefinition components =
+viewComponentsSimplified : List Component -> Html Msg
+viewComponentsSimplified components =
     div []
         (components
             |> List.map (\c -> ( c.id, Maybe.withDefault JsonNull c.dataDefinition ))
