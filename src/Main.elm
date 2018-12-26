@@ -1,5 +1,13 @@
 module Main exposing (JsonValue(..), Model, Msg(..), decoder, indent, init, loadData, main, update, view, viewJsonKeyValuePair, viewJsonValue)
 
+import Bootstrap.Button as Button
+import Bootstrap.CDN as CDN
+import Bootstrap.Form as Form
+import Bootstrap.Form.Checkbox as Checkbox
+import Bootstrap.Form.Input as Input
+import Bootstrap.Form.Radio as Radio
+import Bootstrap.Grid as Grid
+import Bootstrap.Grid.Col as Col
 import Browser
 import Dict exposing (Dict)
 import Html exposing (..)
@@ -138,38 +146,77 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
+    Grid.container []
+        -- Responsive fixed width container
+        [ CDN.stylesheet
+        , h2 [] [ text "Keboola Connection Components Index" ]
+        , viewMainContent
+            model
+
+        -- Interactive and responsive menu
+        ]
+
+
+viewForm : Model -> Html Msg
+viewForm model =
+    Form.form []
+        [ Form.row []
+            [ Form.col [ Col.sm4 ]
+                [ Input.text
+                    [ Input.attrs
+                        [ placeholder "filter by component id"
+                        , autofocus True
+                        , value model.filter
+                        , onInput ChangeFilter
+                        ]
+                    ]
+                ]
+            , Form.col [ Col.sm2 ]
+                [ Button.button
+                    [ Button.primary
+                    , Button.attrs
+                        [ type_ "button"
+                        , onClick Refresh
+                        ]
+                    ]
+                    [ text "Reload" ]
+                ]
+            ]
+        , Form.row []
+            [ Form.col [ Col.sm4 ]
+                [ Checkbox.checkbox
+                    [ Checkbox.id "checkout"
+                    , Checkbox.attrs [ type_ "checkbox", onClick ToggleDataDefinitionView, checked model.showDataDefinition ]
+                    ]
+                    "Show Data Definition only"
+                ]
+            ]
+        , Form.row []
+            [ Form.col [ Col.sm10 ]
+                (Radio.radioList
+                    "myradios"
+                    [ Radio.create [ Radio.id "rd1" ] "US region"
+                    , Radio.create [ Radio.id "rd2" ] "EU region"
+                    ]
+                )
+            ]
+        ]
+
+
+viewMainContent : Model -> Html Msg
+viewMainContent model =
     div []
-        [ viewFilter model
-        , viewRefreshButton
-        , viewDataDefinitionCheckbox model
+        [ viewForm model
         , case model.apiData of
             Loading ->
                 div [] [ text "Loading" ]
 
             Success kbcIndex ->
-                viewComponents model (filterComponents model.filter kbcIndex.components)
+                Grid.row [] [ Grid.col [] [ viewComponents model (filterComponents model.filter kbcIndex.components) ] ]
 
             Failure _ ->
                 div [] [ text "there was an error" ]
         ]
-
-
-viewRefreshButton : Html Msg
-viewRefreshButton =
-    button [ onClick Refresh ] [ text "Reload" ]
-
-
-viewDataDefinitionCheckbox : Model -> Html Msg
-viewDataDefinitionCheckbox model =
-    label []
-        [ input [ type_ "checkbox", onClick ToggleDataDefinitionView, checked model.showDataDefinition ] []
-        , text "Show Data Definition only"
-        ]
-
-
-viewFilter : Model -> Html Msg
-viewFilter model =
-    input [ placeholder "filter values", value model.filter, onInput ChangeFilter, autofocus True ] []
 
 
 indent : Int -> Attribute msg
@@ -180,7 +227,7 @@ indent depth =
 viewComponents : Model -> List Component -> Html Msg
 viewComponents model components =
     div []
-        [ text ("count:" ++ String.fromInt (List.length components))
+        [ viewCount (List.length components)
         , if model.showDataDefinition then
             viewComponentsDataDefinition components
 
@@ -189,13 +236,18 @@ viewComponents model components =
         ]
 
 
+viewCount : Int -> Html Msg
+viewCount count =
+    div []
+        [ text (String.fromInt count) ]
+
+
 viewComponentsDataDefinition : List Component -> Html Msg
 viewComponentsDataDefinition components =
     div []
         (components
             |> List.map (\c -> ( c.id, Maybe.withDefault JsonNull c.dataDefinition ))
-            |> List.map (\( cid, dataDefinition ) -> ( cid, viewJsonValue 1 dataDefinition ))
-            |> List.map (\( cid, dataDefinition ) -> div [] [ strong [] [ text cid ], text ": ", dataDefinition ])
+            |> List.map (\( cid, dataDefinition ) -> div [] [ strong [] [ text cid ], text ": ", viewJsonValue 1 dataDefinition ])
         )
 
 
@@ -279,7 +331,7 @@ viewJsonKeyValuePair depth ( jsKey, jsValue ) =
                 div
     in
     component [ indent depth ]
-        [ text ("\"" ++ jsKey ++ "\": ")
+        [ span [ style "color" "green" ] [ text ("\"" ++ jsKey ++ "\": ") ]
         , viewJsonValue depth jsValue
         ]
 
