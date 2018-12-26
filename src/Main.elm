@@ -56,9 +56,10 @@ main =
 
 
 type alias Model =
-    { filter : String
+    { region : Region
+    , filter : String
     , showDataDefinition : Bool
-    , apiData : ApiData
+    , data : Dict Region ApiData
     }
 
 
@@ -91,6 +92,17 @@ type JsonValue
     | JsonNull
 
 
+type alias Region =
+    String
+
+
+regionUrlsDict =
+    Dict.fromList
+        [ ( "EU", "https://connection.eu-central-1.keboola.com/v2/storage" )
+        , ( "US", "https://connection.keboola.com/v2/storage" )
+        ]
+
+
 type ApiData
     = Loading
     | Success KbcIndex
@@ -99,8 +111,12 @@ type ApiData
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Model "" True Loading
-    , loadData
+    let
+        model =
+            Model "US" "" True (Dict.fromList [ ( "US", Loading ) ])
+    in
+    ( model
+    , loadData model.region
     )
 
 
@@ -112,32 +128,56 @@ type Msg
     = NoOp
     | ChangeFilter String
     | Refresh
+    | ChangeRegion Region
     | ToggleDataDefinitionView
-    | GotData (Result Http.Error KbcIndex)
+    | GotData Region (Result Http.Error KbcIndex)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotData result ->
+        GotData region result ->
             case result of
-                Ok kbcIndex ->
-                    ( { model | apiData = Success kbcIndex }, Cmd.none )
+                Ok newData ->
+                    ( { model | data = Dict.insert region (Success newData) model.data }
+                    , Cmd.none
+                    )
 
                 Err _ ->
-                    ( { model | apiData = Failure "there was a problem" }, Cmd.none )
+                    ( { model | data = Dict.insert region (Failure "there was a problem") model.data }
+                    , Cmd.none
+                    )
 
         ChangeFilter filter ->
             ( { model | filter = filter }, Cmd.none )
 
         Refresh ->
-            ( { model | apiData = Loading }, loadData )
+            ( { model
+                | data =
+                    model.data
+                        |> Dict.insert "US" Loading
+                        |> Dict.insert "EU" Loading
+              }
+            , Cmd.batch [ loadData "US", loadData "EU" ]
+            )
 
         ToggleDataDefinitionView ->
             ( { model | showDataDefinition = not model.showDataDefinition }, Cmd.none )
 
+        ChangeRegion newRegion ->
+            ( { model | region = newRegion }, loadRegion newRegion model )
+
         NoOp ->
             ( model, Cmd.none )
+
+
+loadRegion : Region -> Model -> Cmd Msg
+loadRegion region model =
+    if Dict.member region model.data then
+        Cmd.none
+
+    else
+        loadData region
 
 
 
@@ -194,9 +234,21 @@ viewForm model =
         , Form.row []
             [ Form.col [ Col.sm10 ]
                 (Radio.radioList
-                    "myradios"
-                    [ Radio.create [ Radio.id "rd1" ] "US region"
-                    , Radio.create [ Radio.id "rd2" ] "EU region"
+                    "regionradio"
+                    [ Radio.create
+                        [ Radio.id "us"
+                        , Radio.inline
+                        , Radio.checked (model.region == "US")
+                        , Radio.onClick (ChangeRegion "US")
+                        ]
+                        "US region"
+                    , Radio.create
+                        [ Radio.id "eu"
+                        , Radio.inline
+                        , Radio.checked (model.region == "EU")
+                        , Radio.onClick (ChangeRegion "EU")
+                        ]
+                        "EU region"
                     ]
                 )
             ]
@@ -207,12 +259,12 @@ viewMainContent : Model -> Html Msg
 viewMainContent model =
     div []
         [ viewForm model
-        , case model.apiData of
+        , case Maybe.withDefault Loading (Dict.get model.region model.data) of
             Loading ->
                 div [] [ text "Loading" ]
 
-            Success kbcIndex ->
-                Grid.row [] [ Grid.col [] [ viewComponents model (filterComponents model.filter kbcIndex.components) ] ]
+            Success data ->
+                Grid.row [] [ Grid.col [] [ viewComponents model (filterComponents model.filter data.components) ] ]
 
             Failure _ ->
                 div [] [ text "there was an error" ]
@@ -340,11 +392,11 @@ viewJsonKeyValuePair depth ( jsKey, jsValue ) =
 -- HTTP
 
 
-loadData : Cmd Msg
-loadData =
+loadData : Region -> Cmd Msg
+loadData region =
     Http.get
-        { url = "https://connection.keboola.com/v2/storage"
-        , expect = Http.expectJson GotData kbcIndexDecoder
+        { url = Maybe.withDefault "invalidurl" (Dict.get region regionUrlsDict)
+        , expect = Http.expectJson (GotData region) kbcIndexDecoder
         }
 
 
