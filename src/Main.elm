@@ -169,7 +169,7 @@ viewDataDefinitionCheckbox model =
 
 viewFilter : Model -> Html Msg
 viewFilter model =
-    input [ placeholder "filter values", value model.filter, onInput ChangeFilter ] []
+    input [ placeholder "filter values", value model.filter, onInput ChangeFilter, autofocus True ] []
 
 
 indent : Int -> Attribute msg
