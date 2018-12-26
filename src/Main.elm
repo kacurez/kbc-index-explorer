@@ -11,6 +11,7 @@ import Http
 import Json.Decode as Decode
     exposing
         ( Decoder
+        , at
         , bool
         , dict
         , field
@@ -19,8 +20,9 @@ import Json.Decode as Decode
         , lazy
         , list
         , map
-        , map2
+        , map3
         , map8
+        , maybe
         , null
         , oneOf
         , string
@@ -47,12 +49,14 @@ main =
 
 type alias Model =
     { filter : String
+    , showDataDefinition : Bool
     , apiData : ApiData
     }
 
 
 type alias Component =
     { id : String
+    , dataDefinition : Maybe JsonValue
     , json : JsonValue
     }
 
@@ -87,7 +91,7 @@ type ApiData
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Model "" Loading
+    ( Model "" True Loading
     , loadData
     )
 
@@ -100,6 +104,7 @@ type Msg
     = NoOp
     | ChangeFilter String
     | Refresh
+    | ToggleDataDefinitionView
     | GotData (Result Http.Error KbcIndex)
 
 
@@ -120,6 +125,9 @@ update msg model =
         Refresh ->
             ( { model | apiData = Loading }, loadData )
 
+        ToggleDataDefinitionView ->
+            ( { model | showDataDefinition = not model.showDataDefinition }, Cmd.none )
+
         NoOp ->
             ( model, Cmd.none )
 
@@ -133,12 +141,13 @@ view model =
     div []
         [ viewFilter model
         , viewRefreshButton
+        , viewDataDefinitionCheckbox model
         , case model.apiData of
             Loading ->
                 div [] [ text "Loading" ]
 
             Success kbcIndex ->
-                viewComponents (filterComponents model.filter kbcIndex.components)
+                viewComponents model (filterComponents model.filter kbcIndex.components)
 
             Failure _ ->
                 div [] [ text "there was an error" ]
@@ -148,6 +157,14 @@ view model =
 viewRefreshButton : Html Msg
 viewRefreshButton =
     button [ onClick Refresh ] [ text "Reload" ]
+
+
+viewDataDefinitionCheckbox : Model -> Html Msg
+viewDataDefinitionCheckbox model =
+    label []
+        [ input [ type_ "checkbox", onClick ToggleDataDefinitionView, checked model.showDataDefinition ] []
+        , text "Show Data Definition only"
+        ]
 
 
 viewFilter : Model -> Html Msg
@@ -160,12 +177,26 @@ indent depth =
     style "padding-left" ((++) (String.fromFloat (0.5 * toFloat depth)) "em")
 
 
-viewComponents : List Component -> Html Msg
-viewComponents components =
+viewComponents : Model -> List Component -> Html Msg
+viewComponents model components =
     div []
         [ text ("count:" ++ String.fromInt (List.length components))
-        , Keyed.node "div" [] (List.map viewComponentKeyed components)
+        , if model.showDataDefinition then
+            viewComponentsDataDefinition components
+
+          else
+            Keyed.node "div" [] (List.map viewComponentKeyed components)
         ]
+
+
+viewComponentsDataDefinition : List Component -> Html Msg
+viewComponentsDataDefinition components =
+    div []
+        (components
+            |> List.map (\c -> ( c.id, Maybe.withDefault JsonNull c.dataDefinition ))
+            |> List.map (\( cid, dataDefinition ) -> ( cid, viewJsonValue 1 dataDefinition ))
+            |> List.map (\( cid, dataDefinition ) -> div [] [ strong [] [ text cid ], text ": ", dataDefinition ])
+        )
 
 
 viewComponentKeyed : Component -> ( String, Html Msg )
@@ -284,8 +315,9 @@ decoder =
 
 componentDecoder : Decoder Component
 componentDecoder =
-    map2 Component
+    map3 Component
         (field "id" string)
+        (maybe (at [ "data", "definition" ] decoder))
         decoder
 
 
