@@ -100,6 +100,7 @@ regionUrlsDict =
     Dict.fromList
         [ ( "EU", "https://connection.eu-central-1.keboola.com/v2/storage" )
         , ( "US", "https://connection.keboola.com/v2/storage" )
+        , ( "AZURE", "https://connection.east-us-2.azure.keboola.com/v2/storage" )
         ]
 
 
@@ -157,8 +158,9 @@ update msg model =
                     model.data
                         |> Dict.insert "US" Loading
                         |> Dict.insert "EU" Loading
+                        |> Dict.insert "AZURE" Loading
               }
-            , Cmd.batch [ loadData "US", loadData "EU" ]
+            , Cmd.batch [ loadData "US", loadData "EU", loadData "AZURE" ]
             )
 
         ChangeView newValue ->
@@ -262,6 +264,13 @@ viewForm model =
                         , Radio.onClick (ChangeRegion "EU")
                         ]
                         "EU region"
+                    , Radio.create
+                        [ Radio.id "azure"
+                        , Radio.inline
+                        , Radio.checked (model.region == "AZURE")
+                        , Radio.onClick (ChangeRegion "AZURE")
+                        ]
+                        "Azure us-east-2 region"
                     ]
                 )
             ]
