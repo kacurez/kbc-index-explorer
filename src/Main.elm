@@ -100,7 +100,9 @@ regionUrlsDict =
     Dict.fromList
         [ ( "EU", "https://connection.eu-central-1.keboola.com/v2/storage" )
         , ( "US", "https://connection.keboola.com/v2/storage" )
-        , ( "AZURE", "https://connection.east-us-2.azure.keboola.com/v2/storage" )
+        , ( "Azure Multitenant", "https://connection.keboola.com/v2/storage" )
+        , ( "Azure Testing", "https://connection.east-us-2.azure.keboola-testing.com/v2/storage" )
+        , ( "csas", "https://connection.csas.keboola.com/v2/storage" )
         ]
 
 
@@ -158,9 +160,11 @@ update msg model =
                     model.data
                         |> Dict.insert "US" Loading
                         |> Dict.insert "EU" Loading
-                        |> Dict.insert "AZURE" Loading
+                        |> Dict.insert "Azure Testing" Loading
+                        |> Dict.insert "Azure Multitenant" Loading
+                        |> Dict.insert "csas" Loading
               }
-            , Cmd.batch [ loadData "US", loadData "EU", loadData "AZURE" ]
+            , Cmd.batch [ loadData "US", loadData "EU", loadData "Azure Testing", loadData "Azure Multitenant", loadData "csas" ]
             )
 
         ChangeView newValue ->
@@ -265,12 +269,26 @@ viewForm model =
                         ]
                         "EU region"
                     , Radio.create
-                        [ Radio.id "azure"
+                        [ Radio.id "azure multitenant"
                         , Radio.inline
-                        , Radio.checked (model.region == "AZURE")
-                        , Radio.onClick (ChangeRegion "AZURE")
+                        , Radio.checked (model.region == "Azure Multitenant")
+                        , Radio.onClick (ChangeRegion "Azure Multitenant")
                         ]
-                        "Azure us-east-2 region"
+                        "Azure Multitenant"
+                    , Radio.create
+                        [ Radio.id "azure testing"
+                        , Radio.inline
+                        , Radio.checked (model.region == "Azure Testing")
+                        , Radio.onClick (ChangeRegion "Azure Testing")
+                        ]
+                        "Azure Testing"
+                    , Radio.create
+                        [ Radio.id "csas"
+                        , Radio.inline
+                        , Radio.checked (model.region == "csas")
+                        , Radio.onClick (ChangeRegion "csas")
+                        ]
+                        "csas"
                     ]
                 )
             ]
